@@ -53,6 +53,7 @@ Change the password under **My account** after the first sign-in. To use a diffe
 |---|---|
 | MySQL is not reachable at 127.0.0.1:3306 | Start MySQL in the XAMPP Control Panel. If XAMPP shows another port, put it in `DB_PORT`. |
 | MySQL rejected the user "root" | Set `DB_USER=root` and leave `DB_PASSWORD=` empty, or use the password you set in phpMyAdmin. |
+| 503 "The database is busy" | The database refused or dropped the connection. Lower `DB_POOL_MAX` to 2, close phpMyAdmin, and check Hostinger's Remote MySQL allows `%`. |
 | Port 5000 is already in use | Another copy of the API is running. Close it, or set another `PORT` in `.env` (and change `vite.config.js` in the frontend to match). |
 
 ## Commands
@@ -102,6 +103,31 @@ uploads/             Uploaded images (not in Git)
 Public: `GET /api/programs`, `/services`, `/team`, `/partners`, `/testimonials`, `/posts`, `/jobs`, `/gallery`, `/events`, `/settings`, and one item at `GET /api/<type>/<id or slug>`. Visitors can `POST /api/contact` and `POST /api/subscribe`.
 
 Admin (needs the sign-in token): `POST /api/auth/login`, then `POST`, `PUT /:id` and `DELETE /:id` on each content type, `GET /api/<type>/all`, `/messages`, `/subscribers`, `/users`, `/stats`, `PUT /api/settings` and `POST /api/upload`.
+
+## Hosting on Render with a Hostinger database
+
+On Render, open the service > **Environment** and set:
+
+| Variable | Value |
+|---|---|
+| `NODE_ENV` | `production` |
+| `CLIENT_URL` | the website's address, with and without `www`, e.g. `https://cedpioneers.com,https://www.cedpioneers.com` |
+| `DB_HOST` | the MySQL host shown in Hostinger (hPanel > Databases) |
+| `DB_PORT` | `3306` |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD` | the database, user and password created in Hostinger |
+| `DB_CREATE` | `false` (the database already exists in Hostinger) |
+| `DB_POOL_MAX` | `3` |
+
+Also on Render, set **Health Check Path** to `/api/health`. In Hostinger, under **Remote MySQL**, allow access from any host (`%`), because Render's addresses change.
+
+Hostinger's shared MySQL allows only a few connections per database user, and the trip from Render to Hostinger adds delay. So the API:
+
+- keeps at most `DB_POOL_MAX` connections open (keep it at 3, or 2 if errors continue; extra requests wait their turn instead of failing)
+- retries a query once its connection drops or is refused
+- keeps public data in memory for `CACHE_SECONDS` (60 by default), so most visits don't touch the database at all; any save in the admin area clears it at once
+- answers `503 The database is busy` only if the database stays unreachable, and the website retries those requests by itself
+
+Keep phpMyAdmin closed while testing the live site: each phpMyAdmin tab uses one of the same few connections.
 
 ## Putting it online
 

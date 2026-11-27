@@ -22,13 +22,44 @@ const sequelize =
         dialect: 'mysql',
         logging: false,
         define: { charset: 'utf8mb4', collate: 'utf8mb4_unicode_ci' },
-        dialectOptions: { charset: 'utf8mb4' },
-        pool: { max: 10, min: 0, idle: 10000 },
+        dialectOptions: {
+          charset: 'utf8mb4',
+          connectTimeout: 20000,
+          // Keeps connections over a long network path (e.g. Render -> Hostinger) from going stale.
+          enableKeepAlive: true,
+          keepAliveInitialDelay: 10000,
+        },
+        // Shared MySQL hosting (Hostinger) allows only a few connections per database user.
+        // Keep the pool small: extra requests wait their turn instead of being refused.
+        // Idle connections are closed quickly, before the host closes them for us.
+        pool: {
+          max: Number(process.env.DB_POOL_MAX) || 3,
+          min: 0,
+          idle: 5000,
+          evict: 2000,
+          acquire: 60000,
+        },
+        // A query that hits a dropped or refused connection is tried again on a fresh one.
+        retry: {
+          max: 4,
+          backoffBase: 300,
+          backoffExponent: 1.6,
+          match: [
+            /ECONNRESET/, /ECONNREFUSED/, /ETIMEDOUT/, /EPIPE/, /PROTOCOL_CONNECTION_LOST/,
+            /Connection lost/i, /closed the connection/i, /Too many connections/i, /max_user_connections/i,
+            /ER_USER_LIMIT_REACHED/, /ER_CON_COUNT_ERROR/, /Can't add new command when connection is in closed state/i,
+            'SequelizeConnectionError', 'SequelizeConnectionRefusedError', 'SequelizeConnectionTimedOutError',
+            'SequelizeConnectionAcquireTimeoutError',
+          ],
+        },
       });
 
 /** Creates the MySQL database if it does not exist yet, so nothing has to be made by hand in phpMyAdmin. */
 async function ensureDatabase() {
   if (dialect !== 'mysql') return;
+  // On shared hosting the database is created in the control panel and the user may not be
+  // allowed to list or create databases. Set DB_CREATE=false in that case.
+  if (process.env.DB_CREATE === 'false') return;
   const mysql = require('mysql2/promise');
   const connection = await mysql.createConnection({
     host: settings.host, port: settings.port, user: settings.user, password: settings.password,
@@ -59,4 +90,13 @@ function explain(err) {
   return null;
 }
 
-module.exports = { sequelize, ensureDatabase, explain };
+/** True for errors that mean "the database could not be reached right now", not "the query was wrong". */
+function isConnectionError(err) {
+  const names = ['SequelizeConnectionError', 'SequelizeConnectionRefusedError', 'SequelizeConnectionTimedOutError',
+    'SequelizeConnectionAcquireTimeoutError', 'SequelizeHostNotReachableError', 'SequelizeAccessDeniedError'];
+  const text = `${err && err.name} ${err && err.message} ${err && err.original && err.original.code}`;
+  return names.includes(err && err.name)
+    || /ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|PROTOCOL_CONNECTION_LOST|Connection lost|closed the connection|Too many connections|max_user_connections|ER_USER_LIMIT_REACHED|ER_CON_COUNT_ERROR/i.test(text);
+}
+
+module.exports = { sequelize, ensureDatabase, explain, isConnectionError };

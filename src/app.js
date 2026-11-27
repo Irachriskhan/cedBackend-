@@ -7,6 +7,8 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const routes = require('./routes');
 const { uploadDir } = require('./middleware/upload');
+const { cachePublicGets, clearOnChange } = require('./middleware/cache');
+const { isConnectionError } = require('./config/db');
 
 const app = express();
 
@@ -18,7 +20,7 @@ app.use(express.json({ limit: '1mb' }));
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 
 app.use('/uploads', express.static(uploadDir, { maxAge: '7d' }));
-app.use('/api', routes);
+app.use('/api', clearOnChange, cachePublicGets, routes);
 app.use('/api', (req, res) => res.status(404).json({ message: 'This address does not exist.' }));
 
 // Optional: serve the built website from this server too. The website lives in its
@@ -43,6 +45,12 @@ app.use((err, req, res, next) => {
     return res.status(422).json({ message });
   }
   if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ message: 'The image is larger than 4 MB.' });
+  if (isConnectionError(err)) {
+    // Temporary: the database is busy or the connection dropped. The website retries by itself.
+    console.warn(`Database unavailable for ${req.method} ${req.originalUrl}: ${err.message}`);
+    res.set('Retry-After', '2');
+    return res.status(503).json({ message: 'The database is busy. Try again in a moment.' });
+  }
   const status = err.status || 500;
   if (status >= 500) console.error(err);
   res.status(status).json({ message: status >= 500 ? 'Something went wrong on the server.' : err.message });
