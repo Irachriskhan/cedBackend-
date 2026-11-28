@@ -164,6 +164,20 @@ const Event = sequelize.define(
   { tableName: 'events' }
 );
 
+/* ---------- Uploaded images ----------
+ * Stored in the database, not on the server's disk: hosts such as Render wipe
+ * their disk on every restart or redeploy, which made uploaded photos disappear. */
+const UploadFile = sequelize.define(
+  'UploadFile',
+  {
+    name: str(120, { allowNull: false, unique: true }),
+    mime: str(60, { allowNull: false }),
+    size: { type: DataTypes.INTEGER, allowNull: false },
+    data: { type: DataTypes.BLOB('long'), allowNull: false },
+  },
+  { tableName: 'upload_files' }
+);
+
 /* ---------- Things visitors send us ---------- */
 const Message = sequelize.define(
   'Message',
@@ -241,6 +255,7 @@ module.exports = {
   Testimonial,
   Post,
   Job,
+  UploadFile,
   GalleryItem,
   Event,
   Message,

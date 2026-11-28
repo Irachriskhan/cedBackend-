@@ -67,13 +67,14 @@ Change the password under **My account** after the first sign-in. To use a diffe
 
 ## Photos and sample content
 
-- **CED photos** in `seed-images/` (the ICT class, the English class, Master Project Pitching and the three founders) are copied into `uploads/` by `npm run seed`.
+- **Photos uploaded in the admin area are stored in the database** (the `upload_files` table), not on the server's disk. Hosts such as Render wipe their disk on every restart, redeploy or sleep, so photos kept on disk disappeared. Images are served at `/uploads/<name>`.
+- **CED photos** in `seed-images/` (the ICT class, the English class, Master Project Pitching and the three founders) are served straight from that folder, so they are always there after a deploy.
 - **Placeholder photos** from picsum.photos remain on programmes that have no CED photo yet.
 - **Sample content** with "Sample" in the title (3 events, 1 news article) shows how those pages look.
 
-Replace the placeholders and samples in the admin area before going live.
+Images can be up to 4 MB (`UPLOAD_MAX_MB`). Some database hosts accept less in one request; if so, the admin area says how large an image may be. Photos under 1 MB work everywhere and load faster.
 
-**Back up two things:** the `ced_website` database (phpMyAdmin > Export, or `mysqldump`) and the `uploads/` folder. Uploaded images are not stored in Git.
+**Back up** the `ced_website` database (phpMyAdmin > Export, or `mysqldump`): it now holds the content and the uploaded photos.
 
 ## Updating from an earlier version
 
@@ -92,10 +93,11 @@ src/
   models/index.js    Database tables
   routes/index.js    All API addresses
   routes/crud.js     Shared list / add / edit / delete logic
-  middleware/        Sign-in check, image upload
+  routes/files.js    Serves images at /uploads/<name>
+  middleware/        Sign-in check, image upload, cache
   seed/seed.js       Starting content
 seed-images/         CED photos used by the seed command
-uploads/             Uploaded images (not in Git)
+uploads/             Older uploaded images, if any (not in Git); new uploads are stored in the database
 ```
 
 ## API overview

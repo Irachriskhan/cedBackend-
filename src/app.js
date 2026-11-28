@@ -6,7 +6,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const routes = require('./routes');
-const { uploadDir } = require('./middleware/upload');
+const files = require('./routes/files');
 const { cachePublicGets, clearOnChange } = require('./middleware/cache');
 const { isConnectionError } = require('./config/db');
 
@@ -19,7 +19,7 @@ app.use(cors({ origin: origins }));
 app.use(express.json({ limit: '1mb' }));
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 
-app.use('/uploads', express.static(uploadDir, { maxAge: '7d' }));
+app.use('/uploads', files);
 app.use('/api', clearOnChange, cachePublicGets, routes);
 app.use('/api', (req, res) => res.status(404).json({ message: 'This address does not exist.' }));
 

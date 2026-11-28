@@ -3,9 +3,9 @@ const rateLimit = require('express-rate-limit');
 const models = require('../models');
 const { crud, wrap, pick } = require('./crud');
 const { signToken, requireAuth, requireAdmin } = require('../middleware/auth');
-const { upload } = require('../middleware/upload');
+const { upload, newName, MAX_MB } = require('../middleware/upload');
 
-const { User, Program, Service, TeamMember, Partner, Testimonial, Post, Job, GalleryItem, Event, Message, Subscriber, Setting } = models;
+const { User, Program, Service, TeamMember, Partner, Testimonial, Post, Job, GalleryItem, Event, UploadFile, Message, Subscriber, Setting } = models;
 const router = express.Router();
 
 const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v || ''));
@@ -202,10 +202,40 @@ router.delete('/users/:id', requireAuth, requireAdmin, wrap(async (req, res) => 
 /* ------------------------------------------------------------------ */
 /* Image upload and dashboard numbers                                  */
 /* ------------------------------------------------------------------ */
-router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
+// The largest single request the database host accepts (max_allowed_packet). Checked once.
+let packetLimit = null;
+async function databasePacketLimit() {
+  if (packetLimit === null) {
+    try {
+      const [rows] = await models.sequelize.query('SELECT @@max_allowed_packet AS m');
+      packetLimit = Number(rows[0].m) || 0;
+    } catch {
+      packetLimit = 0; // unknown: let the database decide
+    }
+  }
+  return packetLimit;
+}
+
+router.post('/upload', requireAuth, upload.single('file'), wrap(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Choose an image to upload.' });
-  res.status(201).json({ url: `/uploads/${req.file.filename}` });
-});
+  const limit = await databasePacketLimit();
+  // Leave room for the rest of the query around the image.
+  if (limit && req.file.size > limit - 64 * 1024) {
+    const mb = Math.max((limit - 64 * 1024) / (1024 * 1024), 0.1).toFixed(1);
+    return res.status(413).json({ message: `This image is too large for the database host (largest accepted: about ${mb} MB). Make it smaller and upload it again.` });
+  }
+  const name = newName(req.file.mimetype);
+  try {
+    await UploadFile.create({ name, mime: req.file.mimetype, size: req.file.size, data: req.file.buffer });
+  } catch (err) {
+    const code = err.original && err.original.code;
+    if (code === 'ER_NET_PACKET_TOO_LARGE' || /max_allowed_packet|packet.*too large/i.test(err.message)) {
+      return res.status(413).json({ message: 'The database host does not accept images this large. Use a smaller image (under 1 MB works everywhere).' });
+    }
+    throw err;
+  }
+  res.status(201).json({ url: `/uploads/${name}` });
+}));
 
 router.get('/stats', requireAuth, wrap(async (req, res) => {
   const [programs, services, team, partners, testimonials, posts, jobs, messages, unread, subscribers, gallery, events] = await Promise.all([

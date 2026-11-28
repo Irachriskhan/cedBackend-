@@ -15,21 +15,12 @@ const { ensureColumns, User, Program, Service, TeamMember, Partner, Testimonial,
  */
 const photo = (name, w = 1200, h = 800) => `https://picsum.photos/seed/ced-${name}/${w}/${h}`;
 
-/* Real CED photos shipped with the project. The seed copies them into backend/uploads. */
+/* Real CED photos shipped with the project, in seed-images/. The API serves them
+   at /uploads/ced-<file> straight from that folder, so nothing needs copying. */
 const fs = require('fs');
 const path = require('path');
 const seedImages = path.join(__dirname, '..', '..', 'seed-images');
-const uploads = path.join(__dirname, '..', '..', 'uploads');
-function real(file) {
-  try {
-    fs.mkdirSync(uploads, { recursive: true });
-    const target = path.join(uploads, `ced-${file}`);
-    if (!fs.existsSync(target)) fs.copyFileSync(path.join(seedImages, file), target);
-    return `/uploads/ced-${file}`;
-  } catch (err) {
-    return null;
-  }
-}
+const real = (file) => (fs.existsSync(path.join(seedImages, file)) ? `/uploads/ced-${file}` : null);
 const IMG = {
   ict: real('ict-course.webp'),
   english: real('english-level-b.webp'),
